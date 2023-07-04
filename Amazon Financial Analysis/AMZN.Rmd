@@ -1,0 +1,326 @@
+---
+title: "AMAZON y Forecasts"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-07-03"
+author:: "Bastián Astudillo Fica"
+---
+
+```{r Library, include=FALSE}
+library(fpp3)
+library(PerformanceAnalytics)
+library(xts)
+library(quantmod)
+library(fUnitRoots)
+library(forecast)
+library(ggplot2)
+library(tseries)
+library(lmtest)
+library(TSA)
+library(Metrics)
+library(ggplot2)
+library(tsfeatures)
+
+```
+
+#  Analisis de Amazon, series temporales
+
+Tomaremos los datos desde yahoo y utilizaremos el precio de cierre.
+```{r Intro, include=TRUE, echo=TRUE, fig.align='center',out.width='100%', out.height='75%'}
+
+options(digits = 3)
+options(warn = - 1)  
+##Obtenemos precios de AMAZON
+AMZN<-getSymbols("AMZN", from="2020-08-01",to="2021-03-31", src = "yahoo", auto.assign = FALSE) #
+# Eliminando valores faltantes
+AMZN <- na.omit(AMZN)
+# Mantenemos columnas con Precios de Cierre  columna 4:
+AMZN <- AMZN[,4]
+print(head(AMZN, n = 5))
+##Podemos graficar:
+# Gráfico utilizando ggplot2
+ggplot(data = AMZN, aes(x = index(AMZN), y = AMZN$AMZN.Close)) +
+  geom_line(color = "blue") +
+  labs(x = "Fecha", y = "Precios", title = "Gráfico de precios de Amazon") +
+  theme_minimal()
+
+length(AMZN)
+##Partimos serie, tomemos el 7% para la prueba
+h <- round(length(AMZN)*0.07, digits = 0 )
+h
+train <- AMZN[1:(nrow(AMZN) - h), ]
+test<- AMZN[(nrow(AMZN) - h + 1):nrow(AMZN), ]
+
+# Crear el data frame df2 con los conjuntos de train y test
+df2 <- data.frame(Date = as.Date(index(AMZN)), Train = c(coredata(train), rep(NA, h)), Test = c(rep(NA, length(AMZN) - h), coredata(test)))
+
+# Crear el gráfico utilizando ggplot2
+ggplot(data = df2) +
+  geom_line(aes(x = Date, y = Train, color = "Train")) +
+  geom_line(aes(x = Date, y = Test, color = "Test")) +
+  labs(x = "Fecha", y = "Precios", title = "Gráfico de precios de Amazon") +
+  scale_color_manual(values = c("Train" = "red", "Test" = "green")) +
+  theme_minimal()
+```
+
+
+
+# Modelo ARIMA
+
+verificaremos si la serie es estacionaria y poder aplicar el modelo ARIMA e añadiremos a una tabla de criterios para evaluar
+```{r ARIMA , include=TRUE, echo=TRUE, fig.align='center',out.width='100%', out.height='65%'}
+#######################################################
+############ Modelos ARIMA ############################
+###Veamos si la serie es estacionaria:
+adfTest(train)
+
+##Como no es estacionaria, la diferenciamos y vemos si ya es estacionaria:
+dtrain<-diff(train)[-1,]
+adfTest(dtrain)  #con libreria fUnitRoorts
+adf.test(dtrain)  #con librería tseries
+
+###########################333
+##Ya estacionaria, definimos candidatos de modelos ARMA
+
+m<-eacf(dtrain, 15,10)  #Seria un ARMA(7,3), pero si deseamos expresarla como ARIMA, sería: ARIMA (7,1,3), pues la diferenciamos una vez para hacerla estacionaria.
+
+#Definamos otros modelos mediante la función auto.arima()
+m2<-auto.arima(train, seasonal = TRUE)
+summary(m2)   #Sería arima(1,0,0)
+
+###Modelación:
+mod1<-Arima(train, order=c(7,1,3), method = "ML")
+summary(mod1)
+coeftest(mod1)
+tsdiag(mod1)  ##residuos sw ven ok.
+
+mod2<-Arima(train, order=c(1,0,0), method = "ML")
+mod2
+coeftest(mod2)
+tsdiag(mod1)   #Residuos se ven ok
+##Pronosticos
+#install.packages('forecast', dependencies = TRUE)
+
+### Modelos pronóstico para m1 y m2:
+Pron_m1<-forecast(mod1, h)
+Pron_m2<- forecast(mod2, h)
+
+summary(Pron_m1)
+summary(Pron_m2)
+
+##Otro Gráfico integral:
+##pasamos a ts los datos, son 154 datos en la parte train:
+traints<-ts(train, start=c(2020,08,01), frequency = 154)
+fitted1<-ts(mod1$fitted,start=c(2020,08,01), frequency = 154 )
+fitted2<-ts(mod2$fitted,start=c(2020,08,01), frequency = 154 )
+pron1<-ts(Pron_m1$mean, start = c(2021,08), frequency = 154)
+pron2<-ts(Pron_m2$mean, start = c(2021,08), frequency = 154)
+
+autoplot(traints)+
+  autolayer(fitted1, series="ARIMA (7,1,3)")+
+  autolayer(fitted2, series="ARIMA (1,0,0)")+
+  autolayer(pron1, series="Pron Arima (7,1,3)")+
+  autolayer(pron2, series="Pron Arima (1,0,0)")
+
+#### Midamos el error de pronóstico, RMSE y MAPE:
+library(Metrics)
+RMSE_arima<-rmse(test, Pron_m1$mean)
+RMSEar1<-rmse(test, Pron_m2$mean)
+
+MAPE_arima<-mape(test, Pron_m1$mean)
+MAPEar1<-mape(test, Pron_m2$mean)
+
+##imprimir los resultados al momento:
+###Imprimamos los resultados en una tabla:
+
+Modelo<-c("ARIMA(7,1,3)", "AR(3)")
+
+RMSE<-c(RMSE_arima, RMSEar1)
+
+MAPE<-c(MAPE_arima, MAPEar1)
+
+res<-data.frame(Modelo,RMSE, MAPE)
+
+print((res))
+
+
+
+
+```
+# Modelo Suavizamiento Exponencial
+
+```{r Suavizamiento Exponencial, include=TRUE, echo=TRUE, fig.align='center',out.width='100%', out.height='65%'}
+#######################################################
+############ Modelos Suavizamiento Exponencial ########
+
+traints<-ts(train, start=c(2020,08,01), frequency = 154)
+plot(traints)
+
+##No hay una estacionalidad evidente, por lo que probamos modelos de suavizamiento simples
+###Posibles enfoques de suavizamiento: 
+##
+###Primer Modelo:
+fit1<-ses(traints, h=12 )
+summary(fit1)
+ffit1<-forecast(fit1, h=12)
+autoplot(fit1) +  autolayer(fitted(fit1))
+
+#############
+#Segundo Modelo: Tendencia Lineal con Holt, podríamos probar aún este, auque no hay tendencia evidente:
+fit2 <- holt(traints,h=12)
+summary(fit2)
+ffit2<-forecast(fit2, h=12)
+autoplot(fit2) +  autolayer(fitted(fit2))
+
+##############
+###Tercer Modelo: Holt con corrección a la deriva (sin estacionalidad):
+fit3<-HoltWinters(traints, alpha = NULL, beta=NULL, gamma = FALSE)
+fit3
+ffit3<-forecast(fit3, h=12)
+autoplot(traints)+autolayer(ffit3)
+
+###Cuarto Modelo: Probemos la aplicación de ets(), que deje determine el modelo
+fit4<-ets(train, model="ZZZ", damped=FALSE, alpha=NULL, beta=NULL,
+          gamma=NULL, phi=NULL, lambda=FALSE, biasadj=FALSE,
+          additive.only=FALSE, restrict=TRUE,
+          allow.multiplicative.trend=FALSE)
+summary(fit4)
+ffit4<-forecast(fit4, h=12 )
+autoplot(forecast(fit4,h=12), include=50)
+##############
+##Métrica Desempeño pronóstico:
+RMSEses<-rmse(test, ffit1$mean)
+RMSEholt<-rmse(test, ffit2$mean)
+RMSE_HW<-rmse(test, ffit3$mean)
+RMSEets<-rmse(test, ffit4$mean)
+
+MAPEses<-mape(test, ffit1$mean)
+MAPEholt<-mape(test, ffit2$mean)
+MAPE_HW<-mape(test, ffit3$mean)
+MAPEets<-mape(test, ffit4$mean)
+
+
+###Imprimamos los resultados en una tabla:
+
+Modelo<-c("ARIMA(7,1,3)", "AR(3)", "ses", "holt", "HW", "ets")
+
+RMSE<-c(RMSE_arima, RMSEar1, RMSEses, RMSEholt, RMSE_HW, RMSEets)
+
+MAPE<-c(MAPE_arima, MAPEar1, MAPEses, MAPEholt, MAPE_HW, MAPEets)
+
+res<-data.frame(Modelo,RMSE, MAPE)
+
+print((res))
+```
+
+
+# Modelo Red Neuronal tipo Feed Forward Neural
+
+```{r Red Neuronal tipo Feed Forward Neural, include=TRUE, echo=TRUE, fig.align='center',out.width='100%', out.height='75%'}
+
+#######################################################################
+#################  Red Neuronal tipo Feed Forward Neural ##############
+##Neural Network Time Serie Regression ##https://pkg.robjhyndman.com/forecast/reference/nnetar.html
+##Función:nnetar: "Feed-forward neural networks with a single hidden layer and lagged inputs for forecasting univariate time series."
+# Gráfico utilizando ggplot2
+ggplot(data = AMZN, aes(x = index(AMZN), y = AMZN$AMZN.Close)) +
+  geom_line(color = "blue") +
+  labs(x = "Fecha", y = "Precios", title = "Gráfico de precios de Amazon") +
+  theme_minimal()
+
+length(AMZN)
+# Partir la serie, tomar el 7% para la prueba
+h <- round(nrow(AMZN) * 0.07)
+train <- AMZN[1:(nrow(AMZN) - h), ]
+test <- AMZN[(nrow(AMZN) - h + 1):nrow(AMZN), ]
+
+
+
+
+## Generamos la función de pronóstico. En datos de precios, se deben transformar 
+#los datos lambda para tratar que los residuos sean cercanos a homocedásticos.  
+
+nn1 <- nnetar(train, lambda = TRUE)
+nn1
+autoplot(forecast(nn1,PI=TRUE, h=12), include=50)
+fnn1<-forecast(nn1,h=12)
+# Agregar el pronóstico a df2
+df2$fnn1 <- c(rep(NA, length(AMZN) - h), coredata(fnn1$mean))
+
+## AR Nivel, recordemos que en la primera parte, teníamos un modelo ARMA con la parte AR(7) 
+#que podemos incluir:
+
+nn2=nnetar(train, p=7, lambda=TRUE)
+nn2
+autoplot(forecast(nn2,PI=TRUE, h=12))
+fnn2<-forecast(nn2,h=12)
+
+# Agregar los pronósticos a df2
+df2$fnn1 <- c(rep(NA, length(AMZN) - h), coredata(fnn1$mean))
+df2$fnn2 <- c(rep(NA, length(AMZN) - h), coredata(fnn2$mean))
+
+# Graficar con ggplot
+
+ggplot(df2, aes(x = Date)) +
+  geom_line(aes(y = Train, color = "Train")) +
+  geom_line(aes(y = Test, color = "Test")) +
+  geom_line(aes(y = fnn1, color = "NNAR(12,6)")) +
+  geom_line(aes(y = fnn2, color = "NNAR(7,4)")) +
+  labs(title = "Pronóstico de AMZN",
+       y = "Valor",
+       color = "Data") +
+  scale_color_manual(values = c("Train" = "black", "Test" = "blue", "NNAR(12,6)" = "red", "NNAR(7,4)" = "green"))
+
+```
+
+# No linealidad y Entropia 
+
+```{r Lin y Ent, include=TRUE, echo=TRUE, fig.align='center',out.width='100%', out.height='75%'}
+
+nonlinearity(train)
+entropy(train)
+```
+
+### Los resultados mostrados son medidas de no linealidad y entropía calculadas a partir de los datos de entrenamiento (entrenamiento) utilizados en el análisis.  
+* La medida de no linealidad es 0.0835. Esta medida indica el nivel de no linealidad presente en los datos. Valores cercanos a cero indican una tendencia más lineal, mientras que valores más altos indican más no linealidad en los datos. En este caso, el valor 0,0835 indica  cierta no linealidad en los datos de entrenamiento, pero no es muy pronunciada.  
+* La entropía es 0.716. una distribución más ordenada y predecible, mientras que un valor más alto indica una distribución más caótica o impredecible. En este caso, un valor de 0.716 indica que los datos de entrenamiento tienen algún grado de desorden o variación, pero no son extremadamente caóticos. 
+
+#### En conjunto, los resultados sugieren que los datos de entrenamiento exhiben cierto grado de no linealidad y variabilidad, aunque no hay una fuerte no linealidad ni caos. Estos resultados pueden ayudarlo a comprender la naturaleza de sus datos y elegir los modelos apropiados para el análisis y la predicción.
+
+# COMPARACIÓN DE RESULTADOS FINALES 
+```{r Resultados Finales, include=TRUE, echo=TRUE}
+
+
+##Cálculo de las méricas de error de pronóstico:
+
+RMSE_nnetar<-rmse(test, fnn1$mean)
+MAPE_nnetar<-mape(test, fnn1$mean)
+RMSE_nnetar2<-rmse(test, fnn2$mean)
+MAPE_nnetar2<-mape(test, fnn2$mean)
+
+###Imprimamos los resultados en una tabla:
+
+Modelo<-c("ARIMA(7,1,3)", "AR(3)", "ses", "holt", "HW", "ets", "nnetar_z", "nnetar_ar7")
+RMSE<-c(RMSE_arima, RMSEar1, RMSEses, RMSEholt, RMSE_HW, RMSEets, RMSE_nnetar, RMSE_nnetar2)
+MAPE<-c(MAPE_arima, MAPEar1, MAPEses, MAPEholt, MAPE_HW, MAPEets,MAPE_nnetar, MAPE_nnetar2)
+res<-data.frame(Modelo,RMSE, MAPE)
+
+print((res))
+```
+# CONCLUSIÓN DE MODELOS 
+
+### Con base en los resultados de las métricas de error (RMSE y MAPE) para varios modelos, podemos concluir que:
+
+* El modelo ARIMA(7,1,3) tiene los errores más pequeños para RMSE (1,86) y MAPE (0,01022), lo que indica que es el modelo más preciso para predecir los precios de Amazon en este caso. 
+
+* Los modelos AR(3), ses, holt, HW y ets también tienen relativamente pocos errores  en comparación con otros modelos. Estos modelos tradicionales basados en métodos estadísticos clásicos también pueden considerarse buenas opciones para la previsión de precios.  
+
+* Los modelos de redes neuronales feedforward, los modelos nnetar_z y nnetar_ar7,  tienen errores más grandes en comparación con los modelos tradicionales. El modelo nnetar_z muestra un RMSE de 10,32 y un MAPE de 0,05613, mientras que el modelo nnetar_ar7 muestra un RMSE de 5,27 y un MAPE de 0,03074. Esto muestra que estos modelos de redes neuronales pueden no ser muy precisos en esta situación particular.  
+
+#### En general, los modelos tradicionales como ARIMA, ses, holt, HW y ets muestran un mejor rendimiento  en términos de precisión de predicción de  precios de Amazon en comparación con los modelos de redes neuronales. Sin embargo, es importante tener en cuenta que el rendimiento del modelo puede variar según los datos y el contexto específico. 
+
+#### Recomendación: la serie de datos presenta características no lineales, el modelo ARIMA(7,1,3) puede ser una buena elección. Este modelo combina componentes de autorregresión, diferenciación y promedio móvil para capturar la autocorrelación, eliminar la tendencia no lineal y modelar los errores pasados. Al seleccionar este modelo, es importante considerar las métricas de error de pronóstico, como el RMSE y el MAPE, para evaluar su ajuste y precisión en relación con los datos observados.
+
+
+
