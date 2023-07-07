@@ -24,13 +24,21 @@ La entropía es 0.716. una distribución más ordenada y predecible, mientras qu
 Los resultados sugieren que los datos de entrenamiento exhiben cierto grado deno linealidad y variabilidad, aunque no hay una fuerte no linealidad ni caos.
 #### RMSE | MAPE Modelos 
 Modelo         RMSE    MAPE
+
 ARIMA(7,1,3)   1.86    0.01022
+
 AR(3)          4.26    0.02388
+
 ses            1.69    0.00912
+
 holt           1.64    0.00860
+
 HW             1.57    0.00789
+
 ets            1.70    0.00914
+
 nnetar(12,6)   7.28    0.03978
+
 nnetar(7,4)    5.87    0.03200
 
 #### CONCLUSIÓN DE MODELOS
