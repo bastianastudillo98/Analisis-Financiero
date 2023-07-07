@@ -14,6 +14,7 @@ Se realiza un analisis y predicción al mercado de AMAZON desde el año 2020 has
 * Modelo Red Neuronal tipo Feed Forward Neural
   1. NNAR(12,6)
   2. NNAR(7,4)
+  
 Y para escoger el mejor modelo para el mercado de Amazon se realizo de la siguiente manera:
 ####  Medidas de no linealidad y entropía calculadas a partir de los datos de entrenamiento (entrenamiento) utilizados en el análisis.
 La medida de no linealidad es 0.0835. Esta medida indica el nivel de no linealidad presente en losdatos.  Valores cercanos a cero indican una tendencia más lineal, mientras que valores más altosindican más no linealidad en los datos. En este caso, el valor 0,0835 indica cierta no linealidad en losdatos de entrenamiento, pero no es muy pronunciada
